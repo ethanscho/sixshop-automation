@@ -8,7 +8,6 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
 app.config['UPLOAD_EXTENSIONS'] = ['.xls', '.xlsx']
 app.config['UPLOAD_PATH'] = 'uploads'
-app.config['OUTPUT_PATH'] = 'outputs'
 
 @app.route('/')
 def index():
@@ -35,16 +34,10 @@ def upload_files():
     converted_df = convert_order_format(filepath)
 
     # 엑셀 저장
-    converted_filepath = os.path.join(app.config['OUTPUT_PATH'], "crayonbox-" + datetime.today().strftime('%Y-%m-%d') + '.xlsx') 
-    converted_df.to_excel(converted_filepath, index=False)
+    converted_filename = "crayonbox-" + datetime.today().strftime('%Y-%m-%d') + '.xlsx'
+    converted_df.to_excel(converted_filename, index=False)
 
-    @after_this_request
-    def remove_file(response):
-        os.remove(filepath) # 업로드 된 엑셀 파일 삭제
-        os.remove(converted_filepath) # 변환 된 엑셀 파일 삭제
-        return response #render_template('result.html', message='정상 처리 완료!')
-
-    return send_file(converted_filepath, as_attachment=True)
+    return redirect(url_for('show_orders', filename=converted_filename))       
 
 def convert_order_format (filepath):
     from_df = pd.read_excel(filepath)
@@ -70,6 +63,30 @@ def convert_order_format (filepath):
     to_df = to_df.append(rows)
 
     return to_df
+
+@app.route('/orders/<filename>')
+def show_orders(filename):
+    converted_df = pd.read_excel(filename)
+    return render_template('orders.html', 
+                           tables=[converted_df.to_html(classes='data')], 
+                           titles=converted_df.columns.values,
+                           filename=filename)
+
+@app.route('/send_email/<filename>')
+def send_email(filename):
+    # 이메일 보내기
+
+    @after_this_request
+    def remove_file(response):
+        # 업로드 된 파일 삭제
+        for uploaded_filename in os.listdir(app.config['UPLOAD_PATH']):
+            os.remove(os.path.join(app.config['UPLOAD_PATH'], uploaded_filename))
+
+        # 변환된 엑셀 파일 삭제
+        os.remove(filename)
+        return response
+
+    return send_file(filename, as_attachment=True)     
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8081, debug=True)
